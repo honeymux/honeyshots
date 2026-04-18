@@ -41,6 +41,8 @@ interface BlockFill {
   width: number;
 }
 
+type PowerlineShape = "halfCircleLeft" | "halfCircleRight" | "triangleLeft" | "triangleRight";
+
 interface SubRun {
   charCount: number;
   isGeo: boolean;
@@ -372,12 +374,15 @@ function geometricCharNode(
   if (boxSegs) return boxDrawingCharNode(boxSegs, fg, bg, cellWidth, cellHeight, helpers);
   const blockFill = getBlockElement(codePoint);
   if (blockFill) return blockElementNode(blockFill, fg, bg, cellWidth, cellHeight, helpers);
+  const powerline = getPowerlineShape(codePoint);
+  if (powerline) return powerlineCharNode(powerline, fg, bg, cellWidth, cellHeight, helpers);
   const { container } = helpers;
   return container({ children: [], style: { flexShrink: 0, height: cellHeight, width: cellWidth } as any });
 }
 
 // ---------------------------------------------------------------------------
-// Geometric rendering for box-drawing and block element characters.
+// Geometric rendering for box-drawing, block element, and Powerline cap
+// characters.
 //
 // All pixel positions are derived from *global* column indices
 // (round(globalCol * charWidth)) so that the same terminal column always
@@ -518,6 +523,21 @@ function getBundledFontPath(): string {
   return join(ghosttyPublicDir, "jetbrains-mono-nerd.ttf");
 }
 
+function getPowerlineShape(codePoint: number): PowerlineShape | null {
+  switch (codePoint) {
+    case 0xe0b0:
+      return "triangleRight";
+    case 0xe0b2:
+      return "triangleLeft";
+    case 0xe0b4:
+      return "halfCircleRight";
+    case 0xe0b6:
+      return "halfCircleLeft";
+    default:
+      return null;
+  }
+}
+
 async function getRenderer(fontPath?: string): Promise<import("@takumi-rs/core").Renderer> {
   if (cachedRenderer && cachedFontPath === fontPath) {
     return cachedRenderer;
@@ -568,7 +588,9 @@ function hasAnyGeometric(text: string): boolean {
 }
 
 function isGeometricChar(codePoint: number): boolean {
-  return getBoxSegments(codePoint) !== null || getBlockElement(codePoint) !== null;
+  return (
+    getBoxSegments(codePoint) !== null || getBlockElement(codePoint) !== null || getPowerlineShape(codePoint) !== null
+  );
 }
 
 function isLineEmpty(line: TerminalLine): boolean {
@@ -646,6 +668,101 @@ function lineToContainerNode(
       overflow: "hidden",
       width: width ?? "100%",
     },
+  });
+}
+
+// Powerline cap shapes (U+E0B0/B2/B4/B6) rendered as stacks of 1px horizontal
+// strips so the edge tracks the cell geometry exactly, regardless of font
+// metrics. Shape directions match the Powerline convention:
+//
+//   triangleRight (E0B0): filled left, point on right edge
+//   triangleLeft  (E0B2): point on left edge, filled right
+//   halfCircleRight (E0B4): diameter on left edge, curve bulging right
+//   halfCircleLeft  (E0B6): curve bulging left, diameter on right edge
+function powerlineCharNode(
+  shape: PowerlineShape,
+  fg: string,
+  bg: null | string,
+  cellWidth: number,
+  cellHeight: number,
+  helpers: typeof import("@takumi-rs/helpers"),
+) {
+  const { container } = helpers;
+
+  // Half-circle caps: render as a clipped ellipse via borderRadius so the
+  // curved edge gets takumi's anti-aliasing instead of the stair-step
+  // pattern a pixel-strip approximation produces at this size.
+  if (shape === "halfCircleLeft" || shape === "halfCircleRight") {
+    // Inner ellipse is 2 cells wide by 1 cell tall, centered on the edge
+    // adjacent to the pill's filled side so only half of it falls inside
+    // the cell. For halfCircleLeft (diameter on right), anchor the
+    // ellipse's right edge at x=cellWidth by positioning it at left=0
+    // (making its center x=cellWidth). For halfCircleRight (diameter on
+    // left), anchor the ellipse's left edge at x=0 by positioning it at
+    // left=-cellWidth (making its center x=0).
+    const ellipseLeft = shape === "halfCircleLeft" ? 0 : -cellWidth;
+    return container({
+      children: [
+        container({
+          children: [],
+          style: {
+            backgroundColor: fg,
+            borderRadius: "50%",
+            height: cellHeight,
+            left: ellipseLeft,
+            position: "absolute",
+            top: 0,
+            width: cellWidth * 2,
+          } as any,
+        }),
+      ],
+      style: {
+        flexShrink: 0,
+        height: cellHeight,
+        overflow: "hidden",
+        position: "relative",
+        width: cellWidth,
+        ...(bg ? { backgroundColor: bg } : {}),
+      } as any,
+    });
+  }
+
+  // Triangles render as 1px horizontal strips. Straight diagonal edges
+  // need far less AA help than curves do; stair-stepping here is usually
+  // imperceptible at typical terminal font sizes.
+  const children: ReturnType<typeof container>[] = [];
+  const cy = cellHeight / 2;
+  for (let y = 0; y < cellHeight; y++) {
+    const yc = y + 0.5;
+    const dist = yc <= cy ? yc : cellHeight - yc;
+    const fillWidth = Math.round((2 * cellWidth * dist) / cellHeight);
+    if (fillWidth <= 0) continue;
+    const fillLeft = shape === "triangleLeft" ? cellWidth - fillWidth : 0;
+    children.push(
+      container({
+        children: [],
+        style: {
+          backgroundColor: fg,
+          height: 1,
+          left: fillLeft,
+          position: "absolute",
+          top: y,
+          width: fillWidth,
+        } as any,
+      }),
+    );
+  }
+
+  return container({
+    children,
+    style: {
+      flexShrink: 0,
+      height: cellHeight,
+      overflow: "hidden",
+      position: "relative",
+      width: cellWidth,
+      ...(bg ? { backgroundColor: bg } : {}),
+    } as any,
   });
 }
 
@@ -788,6 +905,12 @@ function spanToNode(
       : "line-through";
 
   const containerStyle: Record<string, number | string> = {
+    // Vertically center the text within the cell. Without this, glyphs
+    // render at the font's baseline, which for many fonts — and
+    // especially for nerd-font icon glyphs whose PUA boxes don't track
+    // ASCII metrics — leaves the glyph visually off-center inside the
+    // line box.
+    alignItems: "center",
     display: "flex",
     flexShrink: 0,
     height: "100%",
