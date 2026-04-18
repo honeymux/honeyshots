@@ -1,7 +1,7 @@
 import type { CliRenderer, OptimizedBuffer } from "@opentui/core";
 
 import { type MarkerFrame, type MarkerRegion, encodeMarker } from "./marker-protocol.ts";
-import { readRegionTag } from "./region.tsx";
+import { REGION_ID_PREFIX, readRegionTag } from "./region.tsx";
 
 export interface InstallAdapterOptions {
   /**
@@ -87,20 +87,31 @@ function collectRegions(renderer: CliRenderer): MarkerRegion[] {
     const renderable = node as {
       getChildren?: () => unknown[];
       height?: number;
+      id?: string;
       visible?: boolean;
       width?: number;
       x?: number;
       y?: number;
     };
 
-    const tag = readRegionTag(renderable as Parameters<typeof readRegionTag>[0]);
-    if (tag && typeof renderable.width === "number" && typeof renderable.height === "number") {
-      const nameCount = seenNames.get(tag.name) ?? 0;
-      seenNames.set(tag.name, nameCount + 1);
-      const nth = tag.nth ?? nameCount;
+    let tagName: null | string = null;
+    let tagNth: number | undefined = undefined;
+
+    const explicitTag = readRegionTag(renderable as Parameters<typeof readRegionTag>[0]);
+    if (explicitTag) {
+      tagName = explicitTag.name;
+      tagNth = explicitTag.nth;
+    } else if (typeof renderable.id === "string" && renderable.id.startsWith(REGION_ID_PREFIX)) {
+      tagName = renderable.id.slice(REGION_ID_PREFIX.length);
+    }
+
+    if (tagName && typeof renderable.width === "number" && typeof renderable.height === "number") {
+      const nameCount = seenNames.get(tagName) ?? 0;
+      seenNames.set(tagName, nameCount + 1);
+      const nth = tagNth ?? nameCount;
       const region: MarkerRegion = {
         h: Math.max(0, Math.floor(renderable.height)),
-        name: tag.name,
+        name: tagName,
         w: Math.max(0, Math.floor(renderable.width)),
         x: Math.max(0, Math.floor(renderable.x ?? 0)),
         y: Math.max(0, Math.floor(renderable.y ?? 0)),
