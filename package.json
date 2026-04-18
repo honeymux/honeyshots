@@ -1,0 +1,68 @@
+{
+  "name": "honeyshots",
+  "version": "0.1.0",
+  "description": "Declarative screenshot library for TUIs. Tag regions with React components; capture them by name.",
+  "type": "module",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./opentui": "./src/opentui/index.ts",
+    "./marker-protocol": "./src/opentui/marker-protocol.ts"
+  },
+  "scripts": {
+    "format": "prettier --write src/ test/",
+    "format:check": "prettier --check src/ test/",
+    "lint": "eslint .",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "screenshot",
+    "terminal",
+    "tui",
+    "opentui",
+    "ghostty",
+    "documentation",
+    "docs"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/honeymux/honeyshots.git"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.1.90",
+    "@opentui/react": ">=0.1.90",
+    "react": ">=18",
+    "typescript": "^5"
+  },
+  "peerDependenciesMeta": {
+    "@opentui/core": { "optional": true },
+    "@opentui/react": { "optional": true },
+    "react": { "optional": true }
+  },
+  "dependencies": {
+    "@takumi-rs/core": "^0.65.0",
+    "@takumi-rs/helpers": "^0.65.0",
+    "ghostty-opentui": "^1.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@opentui/core": "0.1.97",
+    "@opentui/react": "0.1.97",
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-perfectionist": "^5.8.0",
+    "prettier": "^3.8.1",
+    "react": "^19.2.4",
+    "typescript-eslint": "^8.58.0"
+  }
+}
