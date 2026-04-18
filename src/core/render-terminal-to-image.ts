@@ -2,7 +2,14 @@ import type { ImageTheme, RenderImageOptions } from "ghostty-opentui/image";
 
 import { StyleFlags, type TerminalData, type TerminalLine, type TerminalSpan } from "ghostty-opentui";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+// Use node module resolution so the paths stay valid whether the
+// consumer's package manager hoists ghostty-opentui to its top-level
+// node_modules or nests it under honeyshots.
+const requireFromHere = createRequire(import.meta.url);
+const ghosttyPublicDir = join(dirname(requireFromHere.resolve("ghostty-opentui/package.json")), "public");
 
 const DEFAULT_THEME: ImageTheme = {
   background: "#1a1b26",
@@ -504,13 +511,11 @@ function getBoxSegments(codePoint: number): [number, number, number, number] | n
 }
 
 function getBundledFallbackFontPath(): string {
-  const dir = typeof __dirname !== "undefined" ? __dirname : import.meta.dirname;
-  return join(dir, "..", "..", "node_modules", "ghostty-opentui", "public", "symbols-nerd-font-mono-regular.ttf");
+  return join(ghosttyPublicDir, "symbols-nerd-font-mono-regular.ttf");
 }
 
 function getBundledFontPath(): string {
-  const dir = typeof __dirname !== "undefined" ? __dirname : import.meta.dirname;
-  return join(dir, "..", "..", "node_modules", "ghostty-opentui", "public", "jetbrains-mono-nerd.ttf");
+  return join(ghosttyPublicDir, "jetbrains-mono-nerd.ttf");
 }
 
 async function getRenderer(fontPath?: string): Promise<import("@takumi-rs/core").Renderer> {
