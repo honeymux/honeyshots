@@ -614,16 +614,15 @@ function lineToContainerNode(
     ];
   }
 
-  const lastSpan = line.spans[line.spans.length - 1];
-  let lineBackground = backgroundColor;
-  if (lastSpan?.bg) {
-    lineBackground = lastSpan.flags & StyleFlags.INVERSE ? (lastSpan.fg ?? theme.background) : lastSpan.bg;
-  }
-
+  // The line background always matches the terminal background. Earlier
+  // versions inherited the last span's bg on the theory that it would
+  // extend a trailing highlight to the right edge, but that caused
+  // non-edge spans with bg=null (the majority) to leak the last span's
+  // bg color across the whole row.
   const spacer = container({
     children: [],
     style: {
-      backgroundColor: lineBackground,
+      backgroundColor: backgroundColor,
       flex: 1,
       flexShrink: 0,
       height: "100%",
@@ -634,7 +633,7 @@ function lineToContainerNode(
     children: [...spanChildren, spacer],
     style: {
       alignItems: "center",
-      backgroundColor: lineBackground,
+      backgroundColor: backgroundColor,
       display: "flex",
       flexDirection: "row",
       flexShrink: 0,
