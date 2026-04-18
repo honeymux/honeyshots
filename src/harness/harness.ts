@@ -8,8 +8,26 @@ import { type MarkerFrame, type MarkerRegion, MarkerStreamParser } from "../open
 import { ProbeResponder } from "./probe-responder.ts";
 
 export interface ShootOptions extends RenderImageOptions {
+  /**
+   * Shorthand: the effective terminal background color for this shot.
+   * When set, honeyshots:
+   *   - uses this color for the render frame/border (frameColor),
+   *   - uses this color for {@link ShootOptions.theme.background},
+   *   - finds the dominant explicit `bg` in the captured frame (the color
+   *     the running TUI paints on "empty" cells) and remaps it to this
+   *     color, so callers don't need to know what the TUI's theme chose.
+   * More targeted control is still available via {@link remapBg}.
+   */
+  bgColor?: string;
   /** If set, pad the image by this many CSS pixels of frame color. */
   border?: number;
+  /**
+   * Per-color remapping applied to every span before rendering. Keys are
+   * hex strings (case-insensitive) matching a span's `bg`; values are the
+   * replacement color. Overrides any implicit {@link bgColor} remap for
+   * matching source colors.
+   */
+  remapBg?: Record<string, string>;
   /** Theme used for the captured image. */
   theme?: ImageTheme;
 }
@@ -120,10 +138,28 @@ export class TuiHarness {
   async shootBuffer(region: null | string, options: ShootOptions = {}): Promise<Buffer> {
     const full = this.captureData();
     const rect = this.resolveRect(region, full);
-    const data = rectMatchesFull(rect, full) ? full : cropTerminalData(full, rect);
-    const { border, ...renderOptions } = options;
+    const cropped = rectMatchesFull(rect, full) ? full : cropTerminalData(full, rect);
+
+    const { bgColor, border, remapBg, theme, ...rest } = options;
+    const effectiveRemap: Record<string, string> = {};
+    if (bgColor) {
+      const dominant = dominantBackgroundColor(cropped);
+      if (dominant) effectiveRemap[dominant] = bgColor;
+    }
+    if (remapBg) Object.assign(effectiveRemap, remapBg);
+
+    const data = Object.keys(effectiveRemap).length > 0 ? remapBackgrounds(cropped, effectiveRemap) : cropped;
+
+    const resolved: Parameters<typeof renderTerminalToImage>[1] = { ...rest };
+    if (theme) {
+      resolved.theme = theme;
+    } else if (bgColor) {
+      resolved.theme = { background: bgColor, text: "#cccccc" };
+    }
+    if (bgColor && resolved.frameColor === undefined) {
+      resolved.frameColor = bgColor;
+    }
     const hasBorder = typeof border === "number" && border > 0;
-    const resolved: Parameters<typeof renderTerminalToImage>[1] = { ...renderOptions };
     if (hasBorder) {
       resolved.paddingX = border;
       resolved.paddingY = border;
@@ -250,8 +286,49 @@ export class TuiHarness {
   }
 }
 
+function dominantBackgroundColor(data: TerminalData): null | string {
+  const freq = new Map<string, number>();
+  for (const line of data.lines) {
+    for (const span of line.spans) {
+      if (!span.bg) continue;
+      const key = normalizeHex(span.bg);
+      freq.set(key, (freq.get(key) ?? 0) + span.width);
+    }
+  }
+  let best: null | string = null;
+  let bestCount = 0;
+  for (const [color, count] of freq) {
+    if (count > bestCount) {
+      best = color;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function normalizeHex(color: string): string {
+  return color.toLowerCase();
+}
+
 function rectMatchesFull(rect: TerminalCropRect, full: TerminalData): boolean {
   return rect.left === 0 && rect.top === 0 && rect.width === full.cols && rect.height === full.rows;
+}
+
+function remapBackgrounds(data: TerminalData, remap: Record<string, string>): TerminalData {
+  const lookup = new Map<string, string>();
+  for (const [from, to] of Object.entries(remap)) {
+    lookup.set(normalizeHex(from), to);
+  }
+  if (lookup.size === 0) return data;
+  const lines = data.lines.map((line) => ({
+    ...line,
+    spans: line.spans.map((span) => {
+      if (!span.bg) return span;
+      const replacement = lookup.get(normalizeHex(span.bg));
+      return replacement === undefined ? span : { ...span, bg: replacement };
+    }),
+  }));
+  return { ...data, lines };
 }
 
 function sleep(ms: number): Promise<void> {
